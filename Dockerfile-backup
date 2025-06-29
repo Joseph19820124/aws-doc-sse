@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#FROM public.ecr.aws/sam/build-python3.13:1.137.1-20250411084548
 FROM public.ecr.aws/sam/build-python3.13@sha256:0df1547849c376aa21f9c726c0d71c4974415ed4405256f8d79f8c25716a9c63 AS uv
 
 # Install the project into `/app`
@@ -51,9 +52,11 @@ FROM public.ecr.aws/sam/build-python3.13@sha256:0df1547849c376aa21f9c726c0d71c49
 # Place executables in the environment at the front of the path and include other binaries
 ENV PATH="/app/.venv/bin:$PATH:/usr/sbin"
 
-# curl-minimal is already installed in the base image, which is sufficient for healthchecks
+# Install lsof for the healthcheck
+# Install other tools as needed for the MCP server
 # Add non-root user and ability to change directory into /root
 RUN dnf update -y && \
+    dnf install -y lsof && \
     dnf clean all -y && \
     rm -rf /var/cache/dnf && \
     groupadd --force --system app && \
@@ -64,24 +67,12 @@ RUN dnf update -y && \
 COPY --from=uv --chown=app:app /root/.local /root/.local
 COPY --from=uv --chown=app:app /app/.venv /app/.venv
 
-# Get SSE-specific scripts
-COPY ./run_server_sse.sh /usr/local/bin/run_server_sse.sh
-COPY ./docker-healthcheck-sse.sh /usr/local/bin/docker-healthcheck-sse.sh
-RUN chmod +x /usr/local/bin/run_server_sse.sh /usr/local/bin/docker-healthcheck-sse.sh
+# Get healthcheck script
+COPY ./docker-healthcheck.sh /usr/local/bin/docker-healthcheck.sh
 
 # Run as non-root
 USER app
 
-# Expose the SSE port
-EXPOSE 8000
-
-# SSE-specific environment variables
-ENV FASTMCP_TRANSPORT=sse
-ENV FASTMCP_PORT=8000
-ENV FASTMCP_HOST=0.0.0.0
-
-# Health check for SSE endpoint
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "docker-healthcheck-sse.sh" ]
-
-# Use the SSE runner script
-ENTRYPOINT ["/usr/local/bin/run_server_sse.sh"]
+# When running the container, add --db-path and a bind mount to the host's db file
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "docker-healthcheck.sh" ]
+ENTRYPOINT ["awslabs.aws-documentation-mcp-server"]
