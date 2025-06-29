@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  aws-documentation-mcp-sse:
+    build:
+      context: .
+      dockerfile: Dockerfile.sse
+    container_name: aws-documentation-mcp-sse
+    ports:
+      - "8000:8000"
+    environment:
+      # AWS Documentation partition (aws or aws-cn)
+      - AWS_DOCUMENTATION_PARTITION=aws
+      # FastMCP SSE configuration
+      - FASTMCP_TRANSPORT=sse
+      - FASTMCP_PORT=8000
+      - FASTMCP_HOST=0.0.0.0
+      - FASTMCP_SSE_PATH=/sse/
+      - FASTMCP_MESSAGE_PATH=/messages/
+      # Logging configuration
+      - FASTMCP_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "docker-healthcheck-sse.sh"]
+      interval: 30s
+      timeout: 30s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # Optional: Nginx reverse proxy for production deployment
+  nginx:
+    image: nginx:alpine
+    container_name: aws-documentation-mcp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-sse.conf:/etc/nginx/conf.d/default.conf:ro
+      # Add SSL certificates here for production
+      # - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      # - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+    depends_on:
+      - aws-documentation-mcp-sse
+    networks:
+      - mcp-network
+    profiles:
+      - production
+
+networks:
+  mcp-network:
+    driver: bridge
